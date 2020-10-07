@@ -56,12 +56,6 @@ def train(lowres,highres, outModel, startmodel=None,startepoch=0, down_sample_ra
 
     train_loader, val_loader = split_train_val(low_resolution_samples, Y)
 
-    # lowres_set = data.TensorDataset(torch.from_numpy(low_resolution_samples), torch.from_numpy(np.zeros(low_resolution_samples.shape[0])))
-    # lowres_loader = DataLoader(lowres_set, batch_size=batch_size, shuffle=False)
-
-    # hires_set = data.TensorDataset(torch.from_numpy(Y), torch.from_numpy(np.zeros(Y.shape[0])))
-    # hires_loader = DataLoader(hires_set, batch_size=batch_size, shuffle=False)
-
     if startmodel is not None:
         print('loading state dict from {}...'.format(startmodel))
         model.load_state_dict(torch.load(startmodel))
@@ -78,10 +72,6 @@ def train(lowres,highres, outModel, startmodel=None,startepoch=0, down_sample_ra
     criterion = nn.MSELoss()
     model.train()
 
-    # running_loss = 0.0
-    # running_loss_validate = 0.0
-    # reg_loss = 0.0
-
     trainer = create_supervised_trainer(model, optimizer, criterion, device=device)
 
     val_metrics = {
@@ -97,12 +87,7 @@ def train(lowres,highres, outModel, startmodel=None,startepoch=0, down_sample_ra
         return -val_loss
 
     handler = EarlyStopping(patience=10, score_function=score_function, trainer=trainer)
-    # Note: the handler is attached to an *Evaluator* (runs one epoch on validation dataset).
     evaluator.add_event_handler(Events.COMPLETED, handler)
-
-    # @trainer.on(Events.ITERATION_COMPLETED(every=log_interval))
-    # def log_training_loss(trainer):
-    #     print("Epoch[{}] Loss: {:.2f}".format(trainer.state.epoch, trainer.state.output))
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_training_results(trainer):
@@ -133,37 +118,3 @@ def train(lowres,highres, outModel, startmodel=None,startepoch=0, down_sample_ra
 
     trainer.run(train_loader, max_epochs=epochs)
     pbar.close()
-
-    # # write the log file to record the training process
-    # with open('HindIII_train.txt', 'w') as log:
-    #     for epoch in tqdm.tqdm(range(1+startepoch, epochs+1+startepoch)):
-    #         for i, (v1, v2) in enumerate(zip(lowres_loader, hires_loader)):
-    #             if (i == len(lowres_loader) - 1):
-    #                 continue
-    #             _lowRes, _ = v1
-    #             _highRes, _ = v2
-                
-    #             _lowRes = Variable(_lowRes)
-    #             _highRes = Variable(_highRes).unsqueeze(1)
-
-    #             if use_gpu:
-    #                 _lowRes = _lowRes.cuda()
-    #                 _highRes = _highRes.cuda()
-    #             optimizer.zero_grad()
-    #             y_prediction = model(_lowRes)
-		
-    #             loss = _loss(y_prediction, _highRes)
-    #             loss.backward()
-    #             optimizer.step()
-		
-    #             running_loss += loss.item()
-
-    #         if (epoch % 100 == 0 or epochs == 1):
-    #             torch.save(model.state_dict(), outModel + str(epoch) + str('.model'))
-        
-    #     print('-------', i, epoch, running_loss/i, strftime("%Y-%m-%d %H:%M:%S", gmtime()))
-	
-    #     log.write(str(epoch) + ', ' + str(running_loss/i,) +', '+ strftime("%Y-%m-%d %H:%M:%S", gmtime())+ '\n')
-    #     running_loss = 0.0
-    #     running_loss_validate = 0.0
-            
