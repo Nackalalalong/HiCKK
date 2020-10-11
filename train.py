@@ -7,7 +7,7 @@ from torch.autograd import Variable
 from time import gmtime, strftime
 import torch.nn as nn
 from tqdm import tqdm
-from model import OurNetV4
+from model import OurNet
 from torch.utils.data import DataLoader
 from data import HicDataset
 
@@ -18,7 +18,7 @@ from ignite.engine import Engine
 
 epochs = 100
 HiC_max_value = 100
-batch_size = 1024
+batch_size = 512
 
 log_interval = 1000
 
@@ -47,7 +47,7 @@ def train(lowres, highres, val_lowres, val_hires, outModel, startmodel=None,star
 
     val_lowres = val_lowres.astype(np.float32)
 
-    model = OurNetV4(batch_size)
+    model = OurNet()
 
     sample_size = low_resolution_samples.shape[-1]
     padding = model.padding
@@ -76,7 +76,6 @@ def train(lowres, highres, val_lowres, val_hires, outModel, startmodel=None,star
         device = 'cuda'
 
     model.to(device)
-    model.init_lstm_state(device)
 
     if startmodel is not None:
         print('loading state dict from {}...'.format(startmodel))
@@ -86,7 +85,6 @@ def train(lowres, highres, val_lowres, val_hires, outModel, startmodel=None,star
     optimizer = optim.SGD(model.parameters(), lr = 0.00001, momentum=0.9, weight_decay=0.0001)
     criterion = nn.MSELoss()
     model.train()
-    model.init_lstm_state(device)
 
     trainer = create_supervised_trainer(model, optimizer, criterion, device=device)
 
@@ -102,8 +100,13 @@ def train(lowres, highres, val_lowres, val_hires, outModel, startmodel=None,star
         val_loss = engine.state.metrics['nll']
         return -val_loss
 
-    handler = EarlyStopping(patience=10, score_function=score_function, trainer=trainer)
+    handler = EarlyStopping(patience=15, score_function=score_function, trainer=trainer)
     evaluator.add_event_handler(Events.COMPLETED, handler)
+
+    @trainer.on(Events.COMPLETED)
+    def save_model(trainer):
+        epoch = trainer.state.epoch + startepoch
+        torch.save(model.state_dict(), outModel + str(epoch+1) + str('.model'))
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_training_results(trainer):

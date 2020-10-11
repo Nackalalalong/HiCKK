@@ -2,80 +2,73 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 
-class OurNetV4(nn.Module):
-    def __init__(self, batch_size):
-        super(OurNetV4, self).__init__()
-        self.batch_size = batch_size
-
+class OurNet(nn.Module):
+    def __init__(self):
+        super(OurNet, self).__init__()
         self.filter_numbers = [8,3,5,8,1]
         self.filter_sizes = [7,5,3,5,7]
-        self.padding = sum(self.filter_sizes)-1-5-3-5-1
+        self.padding = 12
         self.output_dim = 40 - self.padding
-        
-        self.conv1 = nn.Conv2d(1, self.filter_numbers[0], self.filter_sizes[0])
-        self.conv2 = nn.Conv2d(self.filter_numbers[0], self.filter_numbers[1], self.filter_sizes[1], padding=2)
-        self.conv3 = nn.Conv2d(self.filter_numbers[1], self.filter_numbers[2], self.filter_sizes[2], padding=1)
-        self.conv4 = nn.Conv2d(self.filter_numbers[2], self.filter_numbers[3], self.filter_sizes[3], padding=2)
-        self.conv5 = nn.Conv2d(self.filter_numbers[3], self.filter_numbers[4], self.filter_sizes[4])
 
-        self.lstm_input_size = self.output_dim ** 2
-        self.lstm_hidden_size = self.output_dim ** 2
-        self.lstm_num_layer = 1
-        self.lstm_seq_len = 1
-
-        self.lstm = nn.LSTM(
-            self.lstm_input_size,
-            self.lstm_hidden_size,
-            self.lstm_num_layer,
-            batch_first=True
+        self.seq1 = nn.Sequential(
+            nn.Conv2d(1, 5, 3),
+            nn.ReLU(),
+            nn.BatchNorm2d(5),
+            nn.Dropout2d(0.3),
+            nn.Conv2d(5, 5, 3),
+            nn.ReLU(),
+            nn.BatchNorm2d(5),
+            nn.Dropout2d(0.3)
         )
 
-        # self.linear = nn.Sequential(
-        #     nn.Linear(self.lstm_hidden_size, self.output_dim**2),
-        # )
+        self.seq2 = nn.Sequential(
+            nn.Conv2d(1,5,5),
+            nn.ReLU(),
+            nn.BatchNorm2d(5),
+            nn.Dropout2d(0.3),
+        )
 
-        self.dropout = nn.Dropout2d(0.3)
+        self.conv = nn.Conv2d(5, 5, 3)
+
+        self.seq3 = nn.Sequential(
+            nn.Conv2d(1,5,7),
+            nn.ReLU(),
+            nn.BatchNorm2d(5),
+            nn.Dropout2d(0.3),
+        )
+
+        self.seq4 = nn.Sequential(
+            nn.Conv2d(1, 5, 9),
+            nn.ReLU(),
+            nn.BatchNorm2d(5),
+            nn.Dropout2d(0.3),
+        )
+        
+        self.seqout = nn.Sequential(
+            nn.Conv2d(5, 1, 5),
+            nn.ReLU(),
+            # nn.BatchNorm2d(8),
+            # nn.Dropout2d(0.3),
+            # nn.Conv2d(8, 4, 3),
+            # nn.ReLU(),
+            # nn.BatchNorm2d(4),
+            # nn.Dropout2d(0.3),
+            # nn.Conv2d(4, 1, 5),
+            # nn.ReLU(),
+        )
+
 
     def forward(self, x):
-        x1 = self.conv1(x)
-        x = F.relu(x1)
-        x = self.dropout(x)
-        x = self.conv2(x)
-        x = F.relu(x)
-        x = self.dropout(x)
-        x = self.conv3(x)
-        x = F.relu(x)
-        x = self.dropout(x)
-        x = self.conv4(x)
-        x = F.relu(x)
-        x = self.dropout(x)
-        x = x + x1
-        x = self.conv5(x)
-        x = F.relu(x)
+        x1 = self.seq1(x)
+        x2 = self.seq2(x)
+        x3 = self.seq3(x)
+        x4 = x1 + x2
+        x5 = self.conv(x4)
+        x6 = x5 + x3
+        x7 = self.conv(x6)
+        x9 = self.seq4(x)
+        x8 = x7 + x9
 
-        x, (h, c) = self.lstm(x.view(x.size(0), self.lstm_seq_len, self.lstm_input_size), (self.lstm_h, self.lstm_c))
-        h = h.detach()
-        c = c.detach()
-        self.lstm_h = h
-        self.lstm_c = c
-        # x = self.linear(x.view(x.size(0), -1))
+        out = self.seqout(x8)        
 
-        return x.view(x.size(0), 1, self.output_dim, self.output_dim)
-
-    def swish(self,x):
-        return x * F.sigmoid(x)
-
-    def init_lstm_state(self, device):
-        lstm_h = torch.zeros(self.lstm_num_layer, self.batch_size, self.lstm_hidden_size)
-        lstm_c = torch.zeros(self.lstm_num_layer, self.batch_size, self.lstm_hidden_size)
-
-        if device == 'cuda':
-            lstm_h = lstm_h.cuda()
-            lstm_c = lstm_c.cuda()
-
-        self.lstm_h = lstm_h
-        self.lstm_c = lstm_c
-
-    def set_state(self, h,c):
-        self.lstm_h = h
-        self.lstm_c = c
+        return out
