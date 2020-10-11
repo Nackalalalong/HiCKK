@@ -56,7 +56,7 @@ def train_divide(HiCmatrix):
             tag = 'test'
             index.append((tag, i, j))
     result = np.array(result)
-    result = result.astype(np.double)
+    result = result.astype(np.float)
     index = np.array(index)
     return result, index
 

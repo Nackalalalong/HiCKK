@@ -7,42 +7,47 @@ from torch.autograd import Variable
 from time import gmtime, strftime
 import torch.nn as nn
 from tqdm import tqdm
-from model import OurNetV2
+from model import OurNetV4
 from torch.utils.data import DataLoader
 from data import HicDataset
 
 from ignite.engine import Events, create_supervised_trainer, create_supervised_evaluator
 from ignite.metrics import Accuracy, Loss
 from ignite.handlers import EarlyStopping
-
-use_gpu = 1
+from ignite.engine import Engine
 
 epochs = 100
 HiC_max_value = 100
-batch_size = 512
+batch_size = 1024
 
 log_interval = 1000
 
-def split_train_val(features, targets, train_size=0.7):
-    targets = targets[:,np.newaxis,:,:]
-    divide_point = int(features.shape[0] * train_size)
-    feature_train, feature_val = features[:divide_point], features[divide_point:]
-    target_train, target_val = targets[:divide_point], targets[divide_point:]
+# torch.autograd.set_detect_anomaly(True)
 
-    train_loader = DataLoader(HicDataset(torch.from_numpy(feature_train),torch.from_numpy(target_train)), batch_size=batch_size, shuffle=False)
-    val_loader = DataLoader(HicDataset(torch.from_numpy(feature_val),torch.from_numpy(target_val)), batch_size=batch_size, shuffle=False)
+# def split_train_val(features, targets, train_size=0.7):
+#     targets = targets[:,np.newaxis,:,:]
+#     divide_point = int(features.shape[0] * train_size)
+#     feature_train, feature_val = features[:divide_point], features[divide_point:]
+#     target_train, target_val = targets[:divide_point], targets[divide_point:]
 
-    return train_loader, val_loader
+#     train_loader = DataLoader(HicDataset(torch.from_numpy(feature_train),torch.from_numpy(target_train)), batch_size=batch_size, shuffle=False)
+#     val_loader = DataLoader(HicDataset(torch.from_numpy(feature_val),torch.from_numpy(target_val)), batch_size=batch_size, shuffle=False)
 
-def train(lowres,highres, outModel, startmodel=None,startepoch=0, down_sample_ratio=16):
+#     return train_loader, val_loader
+
+def train(lowres, highres, val_lowres, val_hires, outModel, startmodel=None,startepoch=0, down_sample_ratio=16):
     low_resolution_samples = lowres.astype(np.float32) * down_sample_ratio
-
     high_resolution_samples = highres.astype(np.float32)
 
     low_resolution_samples = np.minimum(HiC_max_value, low_resolution_samples)
     high_resolution_samples = np.minimum(HiC_max_value, high_resolution_samples)
 
-    model = OurNetV2()
+    val_lowres = np.minimum(HiC_max_value, val_lowres)
+    val_hires = np.minimum(HiC_max_value, val_hires)
+
+    val_lowres = val_lowres.astype(np.float32)
+
+    model = OurNetV4(batch_size)
 
     sample_size = low_resolution_samples.shape[-1]
     padding = model.padding
@@ -53,13 +58,17 @@ def train(lowres,highres, outModel, startmodel=None,startepoch=0, down_sample_ra
         no_padding_sample = high_resolution_samples[i][0][half_padding:(sample_size-half_padding) , half_padding:(sample_size - half_padding)]
         Y.append(no_padding_sample)
     Y = np.array(Y).astype(np.float32)
+    Y = Y[:,np.newaxis,:,:]
 
-    train_loader, val_loader = split_train_val(low_resolution_samples, Y)
+    val_Y = []
+    for i in range(val_hires.shape[0]):
+        no_padding_sample = val_hires[i][0][half_padding:(sample_size-half_padding) , half_padding:(sample_size - half_padding)]
+        val_Y.append(no_padding_sample)
+    val_Y = np.array(val_Y).astype(np.float32)
+    val_Y = val_Y[:,np.newaxis,:,:]
 
-    if startmodel is not None:
-        print('loading state dict from {}...'.format(startmodel))
-        model.load_state_dict(torch.load(startmodel))
-        print('finish loading state dict')
+    train_loader = DataLoader(HicDataset(torch.from_numpy(low_resolution_samples), torch.from_numpy(Y)), batch_size=batch_size, shuffle=True, drop_last=True)
+    val_loader = DataLoader(HicDataset(torch.from_numpy(val_lowres), torch.from_numpy(val_Y)), batch_size=batch_size, shuffle=True, drop_last=True)
 
     device = 'cpu'
 
@@ -67,10 +76,17 @@ def train(lowres,highres, outModel, startmodel=None,startepoch=0, down_sample_ra
         device = 'cuda'
 
     model.to(device)
+    model.init_lstm_state(device)
 
-    optimizer = optim.SGD(model.parameters(), lr = 0.00001)
+    if startmodel is not None:
+        print('loading state dict from {}...'.format(startmodel))
+        model.load_state_dict(torch.load(startmodel))
+        print('finish loading state dict')
+
+    optimizer = optim.SGD(model.parameters(), lr = 0.00001, momentum=0.9, weight_decay=0.0001)
     criterion = nn.MSELoss()
     model.train()
+    model.init_lstm_state(device)
 
     trainer = create_supervised_trainer(model, optimizer, criterion, device=device)
 
@@ -111,7 +127,7 @@ def train(lowres,highres, outModel, startmodel=None,startepoch=0, down_sample_ra
         pbar.desc = desc.format(metrics['nll'])
         pbar.update(1)
         tqdm.write(
-            "Training Results - Epoch: {} Avg loss: {:.2f}".format(
+            "Validating Results - Epoch: {} Avg loss: {:.2f}".format(
                 epoch, metrics['nll']
             )
         )
