@@ -22,30 +22,17 @@ batch_size = 512
 
 log_interval = 1000
 
-# torch.autograd.set_detect_anomaly(True)
-
-# def split_train_val(features, targets, train_size=0.7):
-#     targets = targets[:,np.newaxis,:,:]
-#     divide_point = int(features.shape[0] * train_size)
-#     feature_train, feature_val = features[:divide_point], features[divide_point:]
-#     target_train, target_val = targets[:divide_point], targets[divide_point:]
-
-#     train_loader = DataLoader(HicDataset(torch.from_numpy(feature_train),torch.from_numpy(target_train)), batch_size=batch_size, shuffle=False)
-#     val_loader = DataLoader(HicDataset(torch.from_numpy(feature_val),torch.from_numpy(target_val)), batch_size=batch_size, shuffle=False)
-
-#     return train_loader, val_loader
-
 def train(lowres, highres, val_lowres, val_hires, outModel, startmodel=None,startepoch=0, down_sample_ratio=16):
     low_resolution_samples = lowres.astype(np.float32) * down_sample_ratio
     high_resolution_samples = highres.astype(np.float32)
+
+    val_lowres = val_lowres.astype(np.float32) * down_sample_ratio
 
     low_resolution_samples = np.minimum(HiC_max_value, low_resolution_samples)
     high_resolution_samples = np.minimum(HiC_max_value, high_resolution_samples)
 
     val_lowres = np.minimum(HiC_max_value, val_lowres)
     val_hires = np.minimum(HiC_max_value, val_hires)
-
-    val_lowres = val_lowres.astype(np.float32)
 
     model = OurNet()
 
