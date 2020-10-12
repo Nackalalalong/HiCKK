@@ -7,29 +7,60 @@ class OurNet(nn.Module):
         super(OurNet, self).__init__()
         self.filter_numbers = [8,3,5,8,1]
         self.filter_sizes = [7,5,3,5,7]
-        self.padding = sum(self.filter_sizes)-1-5-3-5-1
+        self.padding = 12
+        self.output_dim = 40 - self.padding
 
-        self.seq = nn.Sequential(
-            nn.Conv2d(1, self.filter_numbers[0], self.filter_sizes[0]),
+        self.seq1 = nn.Sequential(
+            nn.Conv2d(1, 5, 3),
             nn.ReLU(),
-            nn.BatchNorm2d(self.filter_numbers[0]),
+            nn.BatchNorm2d(5),
             nn.Dropout2d(0.3),
-            nn.Conv2d(self.filter_numbers[0], self.filter_numbers[1], self.filter_sizes[1], padding=2),
+            nn.Conv2d(5, 5, 3),
             nn.ReLU(),
-            nn.BatchNorm2d(self.filter_numbers[1]),
-            nn.Dropout2d(0.3),
-            nn.Conv2d(self.filter_numbers[1], self.filter_numbers[2], self.filter_sizes[2], padding=1),
+            nn.BatchNorm2d(5),
+            nn.Dropout2d(0.3)
+        )
+
+        self.seq2 = nn.Sequential(
+            nn.Conv2d(1,5,5),
             nn.ReLU(),
-            nn.BatchNorm2d(self.filter_numbers[2]),
+            nn.BatchNorm2d(5),
             nn.Dropout2d(0.3),
-            nn.Conv2d(self.filter_numbers[2], self.filter_numbers[3], self.filter_sizes[3], padding=2),
+        )
+
+        self.conv = nn.Conv2d(5, 5, 3)
+
+        self.seq3 = nn.Sequential(
+            nn.Conv2d(1,5,7),
             nn.ReLU(),
-            nn.BatchNorm2d(self.filter_numbers[3]),
+            nn.BatchNorm2d(5),
             nn.Dropout2d(0.3),
-            nn.Conv2d(self.filter_numbers[3], self.filter_numbers[4], self.filter_sizes[4]),
+        )
+
+        self.seq4 = nn.Sequential(
+            nn.Conv2d(1, 5, 9),
+            nn.ReLU(),
+            nn.BatchNorm2d(5),
+            nn.Dropout2d(0.3),
+        )
+        
+        self.seqout = nn.Sequential(
+            nn.Conv2d(5, 1, 5),
             nn.ReLU(),
         )
 
-    def forward(self, x):
 
-        return self.seq(x)
+    def forward(self, x):
+        x1 = self.seq1(x)
+        x2 = self.seq2(x)
+        x3 = self.seq3(x)
+        x4 = x1 + x2
+        x5 = self.conv(x4)
+        x6 = x5 + x3
+        x7 = self.conv(x6)
+        x9 = self.seq4(x)
+        x8 = x7 + x9
+
+        out = self.seqout(x8)        
+
+        return out
