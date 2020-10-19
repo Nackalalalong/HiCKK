@@ -34,7 +34,7 @@ def train(lowres, highres, val_lowres, val_hires, outModel, startmodel=None,star
     val_lowres = np.minimum(HiC_max_value, val_lowres)
     val_hires = np.minimum(HiC_max_value, val_hires)
 
-    model = OurNet()
+    model = OurNet(batch_size)
 
     sample_size = low_resolution_samples.shape[-1]
     padding = model.padding
@@ -63,6 +63,7 @@ def train(lowres, highres, val_lowres, val_hires, outModel, startmodel=None,star
         device = 'cuda'
 
     model.to(device)
+    model.init_lstm_state(device)
 
     if startmodel is not None:
         print('loading state dict from {}...'.format(startmodel))
