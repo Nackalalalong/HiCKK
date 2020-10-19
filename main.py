@@ -7,7 +7,7 @@ def main():
 	chromosome = 'arm_2L'
 	inputfile = '../../H3K27me3_HiChIP_combined.hic'
 	scalerate = 25
-	outmodel = 'mymodel/test/model'
+	outmodel = 'mymodel/v4model'
 	startmodel = None
 	startepoch = 0
 

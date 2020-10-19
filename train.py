@@ -7,7 +7,7 @@ from torch.autograd import Variable
 from time import gmtime, strftime
 import torch.nn as nn
 from tqdm import tqdm
-from model import OurNetV2
+from model import OurNet
 from torch.utils.data import DataLoader
 from data import HicDataset
 
@@ -29,8 +29,8 @@ def split_train_val(features, targets, train_size=0.7):
     feature_train, feature_val = features[:divide_point], features[divide_point:]
     target_train, target_val = targets[:divide_point], targets[divide_point:]
 
-    train_loader = DataLoader(HicDataset(torch.from_numpy(feature_train),torch.from_numpy(target_train)), batch_size=batch_size, shuffle=False)
-    val_loader = DataLoader(HicDataset(torch.from_numpy(feature_val),torch.from_numpy(target_val)), batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(HicDataset(torch.from_numpy(feature_train),torch.from_numpy(target_train)), batch_size=batch_size, shuffle=False, drop_last=True)
+    val_loader = DataLoader(HicDataset(torch.from_numpy(feature_val),torch.from_numpy(target_val)), batch_size=batch_size, shuffle=False, drop_last=True)
 
     return train_loader, val_loader
 
@@ -42,7 +42,7 @@ def train(lowres,highres, outModel, startmodel=None,startepoch=0, down_sample_ra
     low_resolution_samples = np.minimum(HiC_max_value, low_resolution_samples)
     high_resolution_samples = np.minimum(HiC_max_value, high_resolution_samples)
 
-    model = OurNetV2()
+    model = OurNet(batch_size)
 
     sample_size = low_resolution_samples.shape[-1]
     padding = model.padding
@@ -67,8 +67,9 @@ def train(lowres,highres, outModel, startmodel=None,startepoch=0, down_sample_ra
         device = 'cuda'
 
     model.to(device)
+    model.init_lstm_state(device)
 
-    optimizer = optim.SGD(model.parameters(), lr = 0.00001)
+    optimizer = optim.SGD(model.parameters(), lr = 0.00001, momentum=0.9, weight_decay=0.0001)
     criterion = nn.MSELoss()
     model.train()
 
