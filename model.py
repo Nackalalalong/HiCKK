@@ -33,10 +33,10 @@ class OurNet(nn.Module):
             nn.ReLU(),
         )
 
-        self.lstm_input_size = self.output_dim
-        self.lstm_hidden_size = self.output_dim
-        self.lstm_num_layer = 1
-        self.lstm_seq_len = self.output_dim
+        self.lstm_input_size = 1
+        self.lstm_hidden_size = 1
+        self.lstm_num_layer = 5
+        self.lstm_seq_len = self.output_dim ** 2
 
         self.lstm = nn.LSTM(
             self.lstm_input_size,
