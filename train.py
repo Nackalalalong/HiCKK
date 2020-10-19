@@ -17,7 +17,7 @@ from ignite.handlers import EarlyStopping
 from ignite.engine import Engine
 
 epochs = 100
-HiC_max_value = 100
+HiC_max_value = 1000
 batch_size = 512
 
 log_interval = 1000
