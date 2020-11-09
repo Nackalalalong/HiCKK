@@ -8,7 +8,7 @@ def main():
 	val_chromosome = 'arm_2R'
 	inputfile = '../../H3K27me3_HiChIP_combined.hic'
 	scalerate = 25
-	outmodel = 'mymodel/v4model'
+	outmodel = 'mymodel/gan'
 	startmodel = None
 	startepoch = 0
 	binsize = 10000

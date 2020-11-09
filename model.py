@@ -2,80 +2,71 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 
-class OurNet(nn.Module):
-    def __init__(self, batch_size):
-        super(OurNet, self).__init__()
-        self.batch_size = batch_size
-        
-        self.filter_numbers = [8,3,5,8,1]
-        self.filter_sizes = [7,5,3,5,7]
-        self.padding = sum(self.filter_sizes)-1-5-3-5-1
-        self.output_dim = 40 - self.padding
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
 
-        self.seq = nn.Sequential(
-            nn.Conv2d(1, self.filter_numbers[0], self.filter_sizes[0]),
-            nn.ReLU(),
-            nn.BatchNorm2d(self.filter_numbers[0]),
-            nn.Dropout2d(0.3),
-            nn.Conv2d(self.filter_numbers[0], self.filter_numbers[1], self.filter_sizes[1], padding=2),
-            nn.ReLU(),
-            nn.BatchNorm2d(self.filter_numbers[1]),
-            nn.Dropout2d(0.3),
-            nn.Conv2d(self.filter_numbers[1], self.filter_numbers[2], self.filter_sizes[2], padding=1),
-            nn.ReLU(),
-            nn.BatchNorm2d(self.filter_numbers[2]),
-            nn.Dropout2d(0.3),
-            nn.Conv2d(self.filter_numbers[2], self.filter_numbers[3], self.filter_sizes[3], padding=2),
-            nn.ReLU(),
-            nn.BatchNorm2d(self.filter_numbers[3]),
-            nn.Dropout2d(0.3),
-            nn.Conv2d(self.filter_numbers[3], self.filter_numbers[4], self.filter_sizes[4]),
-            nn.ReLU(),
+nz = 100
+ndf = 1600
+ngf = 1600
+nc = 1
+
+class Generator(nn.Module):
+    def __init__(self):
+        super(Generator, self).__init__()
+        self.main = nn.Sequential(
+            # input is Z, going into a convolution
+            nn.ConvTranspose2d( nz, ngf * 8, 4, 1, 0, bias=False),
+            nn.BatchNorm2d(ngf * 8),
+            nn.ReLU(True),
+            # state size. (ngf*8) x 4 x 4
+            nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf * 4),
+            nn.ReLU(True),
+            # state size. (ngf*4) x 8 x 8
+            nn.ConvTranspose2d( ngf * 4, ngf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf * 2),
+            nn.ReLU(True),
+            # state size. (ngf*2) x 16 x 16
+            nn.ConvTranspose2d( ngf * 2, ngf, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf),
+            nn.ReLU(True),
+            # state size. (ngf) x 32 x 32
+            nn.ConvTranspose2d( ngf, nc, 4, 2, 1, bias=False),
+            nn.Tanh()
+            # state size. (nc) x 64 x 64
         )
 
-        self.lstm_input_size = 1
-        self.lstm_hidden_size = 1
-        self.lstm_num_layer = 5
-        self.lstm_seq_len = self.output_dim ** 2
+    def forward(self, input):
+        return self.main(input)
 
-        self.lstm = nn.LSTM(
-            self.lstm_input_size,
-            self.lstm_hidden_size,
-            self.lstm_num_layer,
-            batch_first=True
+class Discriminator(nn.Module):
+    def __init__(self):
+        super(Discriminator, self).__init__()
+        self.main = nn.Sequential(
+            # input is (nc) x 64 x 64
+            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf) x 32 x 32
+            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 2),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*2) x 16 x 16
+            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 4),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*4) x 8 x 8
+            nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 8),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*8) x 4 x 4
+            nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
+            nn.Sigmoid()
         )
 
-        # self.linear = nn.Sequential(
-        #     nn.Linear(self.lstm_hidden_size, self.output_dim**2),
-        # )
-
-        self.dropout = nn.Dropout2d(0.3)
-
-    def forward(self, x):
-        x = self.seq(x)
-
-        x, (h, c) = self.lstm(x.view(x.size(0), self.lstm_seq_len, self.lstm_input_size), (self.lstm_h, self.lstm_c))
-        h = h.detach()
-        c = c.detach()
-        self.lstm_h = h
-        self.lstm_c = c
-        
-        x = x.view(x.size(0), 1, self.output_dim, self.output_dim)
-        x = F.relu(x)
-
-        return x
-  
-    def init_lstm_state(self, device):
-        lstm_h = torch.zeros(self.lstm_num_layer, self.batch_size, self.lstm_hidden_size)
-        lstm_c = torch.zeros(self.lstm_num_layer, self.batch_size, self.lstm_hidden_size)
-
-        if device == 'cuda':
-            lstm_h = lstm_h.cuda()
-            lstm_c = lstm_c.cuda()
-
-        self.lstm_h = lstm_h
-        self.lstm_c = lstm_c
-
-    def set_state(self, h,c):
-        self.lstm_h = h
-        self.lstm_c = c
+    def forward(self, input):
+        return self.main(input)

@@ -7,7 +7,7 @@ from torch.autograd import Variable
 from time import gmtime, strftime
 import torch.nn as nn
 from tqdm import tqdm
-from model import OurNet
+from model import Generator, weights_init, Discriminator
 from torch.utils.data import DataLoader
 from data import HicDataset
 
@@ -18,7 +18,7 @@ from ignite.engine import Engine
 
 epochs = 100
 HiC_max_value = 100
-batch_size = 512
+batch_size = 128
 
 log_interval = 1000
 
@@ -34,10 +34,10 @@ def train(lowres, highres, val_lowres, val_hires, outModel, startmodel=None,star
     val_lowres = np.minimum(HiC_max_value, val_lowres)
     val_hires = np.minimum(HiC_max_value, val_hires)
 
-    model = OurNet(batch_size)
+    netG = Generator()
 
     sample_size = low_resolution_samples.shape[-1]
-    padding = model.padding
+    padding = 0
     half_padding = padding // 2
     output_length = sample_size - padding
     Y = []
@@ -62,66 +62,101 @@ def train(lowres, highres, val_lowres, val_hires, outModel, startmodel=None,star
     if torch.cuda.is_available():
         device = 'cuda'
 
-    model.to(device)
-    model.init_lstm_state(device)
+    netG.to(device)
+    netG.apply(weights_init)
 
-    if startmodel is not None:
-        print('loading state dict from {}...'.format(startmodel))
-        model.load_state_dict(torch.load(startmodel))
-        print('finish loading state dict')
+    netD = Discriminator().to(device)
+    netD.apply(weights_init)
 
-    optimizer = optim.SGD(model.parameters(), lr = 0.00001, momentum=0.9, weight_decay=0.0001)
-    criterion = nn.MSELoss()
-    model.train()
+    # if startmodel is not None:
+    #     print('loading state dict from {}...'.format(startmodel))
+    #     model.load_state_dict(torch.load(startmodel))
+    #     print('finish loading state dict')
 
-    trainer = create_supervised_trainer(model, optimizer, criterion, device=device)
+    # optimizer = optim.SGD(netG.parameters(), lr = 0.00001, momentum=0.9, weight_decay=0.0001)
+    criterion = nn.BCELoss()
+    optimizerD = optim.Adam(netD.parameters(), lr=0.0001, betas=(beta1, 0.999))
+    optimizerG = optim.Adam(netG.parameters(), lr=0.0001, betas=(beta1, 0.999))
 
-    val_metrics = {
-        "nll": Loss(criterion)
-    }
-    evaluator = create_supervised_evaluator(model, metrics=val_metrics, device=device)
+    real_label = 1.
+    fake_label = 0.
 
-    desc = "EPOCH - val loss: {:.2f}"
-    pbar = tqdm(initial=0, leave=False, total=epochs, desc=desc.format(0))
+    img_list = []
+    G_losses = []
+    D_losses = []
+    iters = 0
 
-    def score_function(engine):
-        val_loss = engine.state.metrics['nll']
-        return -val_loss
+    progressBar = tqdm(range(epochs))
 
-    handler = EarlyStopping(patience=15, score_function=score_function, trainer=trainer)
-    evaluator.add_event_handler(Events.COMPLETED, handler)
+    for epoch in progressBar:
+        for i, data in enumerate(train_loader, 0):
+            ############################
+            # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
+            ###########################
+            ## Train with all-real batch
+            netD.zero_grad()
+            # Format batch
+            real_cpu = data[0].to(device)
+            b_size = real_cpu.size(0)
+            label = torch.full((b_size,), real_label, dtype=torch.float, device=device)
+            # Forward pass real batch through D
+            output = netD(real_cpu).view(-1)
+            # Calculate loss on all-real batch
+            errD_real = criterion(output, label)
+            # Calculate gradients for D in backward pass
+            errD_real.backward()
+            D_x = output.mean().item()
 
-    @trainer.on(Events.COMPLETED)
-    def save_model(trainer):
-        epoch = trainer.state.epoch + startepoch
-        torch.save(model.state_dict(), outModel + str(epoch+1) + str('.model'))
+            ## Train with all-fake batch
+            # Generate batch of latent vectors
+            noise = torch.randn(b_size, nz, 1, 1, device=device)
+            # Generate fake image batch with G
+            fake = netG(noise)
+            label.fill_(fake_label)
+            # Classify all fake batch with D
+            output = netD(fake.detach()).view(-1)
+            # Calculate D's loss on the all-fake batch
+            errD_fake = criterion(output, label)
+            # Calculate the gradients for this batch
+            errD_fake.backward()
+            D_G_z1 = output.mean().item()
+            # Add the gradients from the all-real and all-fake batches
+            errD = errD_real + errD_fake
+            # Update D
+            optimizerD.step()
 
-    @trainer.on(Events.EPOCH_COMPLETED)
-    def log_training_results(trainer):
-        evaluator.run(train_loader)
-        metrics = evaluator.state.metrics
-        epoch = trainer.state.epoch + startepoch
-        tqdm.write(
-            "Training Results - Epoch: {} Avg loss: {:.2f}".format(
-                epoch, metrics['nll']
-            )
-        )
-        if trainer.state.epoch % 99 == 0 and epoch > 0:
-            torch.save(model.state_dict(), outModel + str(epoch+1) + str('.model'))
+            ############################
+            # (2) Update G network: maximize log(D(G(z)))
+            ###########################
+            netG.zero_grad()
+            label.fill_(real_label)  # fake labels are real for generator cost
+            # Since we just updated D, perform another forward pass of all-fake batch through D
+            output = netD(fake).view(-1)
+            # Calculate G's loss based on this output
+            errG = criterion(output, label)
+            # Calculate gradients for G
+            errG.backward()
+            D_G_z2 = output.mean().item()
+            # Update G
+            optimizerG.step()
 
-    @trainer.on(Events.EPOCH_COMPLETED)
-    def log_validation_results(trainer):
-        evaluator.run(val_loader)
-        metrics = evaluator.state.metrics
-        epoch = trainer.state.epoch + startepoch
-        epoch = trainer.state.epoch + startepoch
-        pbar.desc = desc.format(metrics['nll'])
-        pbar.update(1)
-        tqdm.write(
-            "Validating Results - Epoch: {} Avg loss: {:.2f}".format(
-                epoch, metrics['nll']
-            )
-        )
+            # Output training stats
+            progressBar.set_description('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
+                % (epoch, num_epochs, i, len(dataloader),
+                    errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
 
-    trainer.run(train_loader, max_epochs=epochs)
-    pbar.close()
+            # Save Losses for plotting later
+            G_losses.append(errG.item())
+            D_losses.append(errD.item())
+
+            if (i+1) % 50 == 0:
+                netG._save_to_state_dict(outModel+'.model')
+
+    plt.figure(figsize=(10,5))
+    plt.title("Generator and Discriminator Loss During Training")
+    plt.plot(G_losses,label="G")
+    plt.plot(D_losses,label="D")
+    plt.xlabel("iterations")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.show()
